@@ -113,6 +113,8 @@ section{scroll-margin-top:72px}
 .bar .bt b{display:block;color:#fff;font-size:22px}
 .bar .btn{margin-left:auto;background:#fff;color:var(--sea);padding:11px 18px}
 @media (min-width:961px){.bar{display:none}}
+@media (max-width:960px){#orderForm{scroll-margin-bottom:84px}.submit-row{padding-bottom:72px}}
+.btn{-webkit-tap-highlight-color:transparent}
 
 /* 表單 */
 .form-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-m);padding:24px}
@@ -396,7 +398,7 @@ dialog::backdrop{background:rgba(14,59,92,.55)}
 <div class="bar" id="bar" aria-live="polite">
   <div class="wrap">
     <div class="bt"><span id="barCount">0 項商品</span><b class="num" id="barTotal">$0</b></div>
-    <a class="btn" href="#form-title">填寫配送資料</a>
+    <a class="btn" href="#form-title" id="barBtn">填寫配送資料</a>
   </div>
 </div>
 
@@ -641,6 +643,19 @@ function init(){
   $("#orderForm").addEventListener("submit", submit);
   $("#orderForm").addEventListener("input", e => { const f = e.target.closest("[data-field]"); if(f) f.classList.remove("invalid"); });
   $("#dClose").addEventListener("click", () => { $("#doneDlg").close(); if(CONFIG.GAS_URL) resetOrder(); });
+
+  // 手機底部列：捲到表單時改為直接送出
+  const barBtn = $("#barBtn");
+  let formInView = false;
+  new IntersectionObserver(([en]) => {
+    formInView = en.isIntersecting;
+    barBtn.textContent = formInView ? "送出訂單" : "填寫配送資料";
+  }, {rootMargin:"0px 0px -40% 0px"}).observe($("#orderForm"));
+  barBtn.addEventListener("click", e => {
+    if(!formInView) return;
+    e.preventDefault();
+    $("#orderForm").requestSubmit();
+  });
 
   const today = new Date(); today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
   $("#date").min = today.toISOString().slice(0,10);
