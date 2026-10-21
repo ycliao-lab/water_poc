@@ -56,6 +56,9 @@ function doPost(e) {
     const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
 
     // 防機器人：隱藏欄位有值即丟棄，回傳假成功
+    // LINE webhook：用來取得推播對象 ID（見 handleLineWebhook_）
+    if (Array.isArray(data.events)) return handleLineWebhook_(data.events);
+
     if (data.website) return json_({ ok: true, orderId: 'HW-IGNORED', total: 0 });
 
     const order = buildOrder_(data);
@@ -295,6 +298,58 @@ function testOrder() {
     source: 'testOrder'
   }) } });
   console.log(res.getContent());
+}
+
+/* ============================== LINE 綁定 ============================== */
+
+/**
+ * 在 LINE Developers 把 Webhook URL 設為本程式的 /exec 網址並開啟 Use webhook 後：
+ * - 店家在官方帳號聊天室（或加入官方帳號的群組）輸入「綁定」，
+ *   機器人會回覆該聊天室的 ID，並記錄在「LINE綁定」工作表。
+ * - 把回覆的 ID 填入指令碼屬性 LINE_TO 即可收到新訂單推播。
+ * 回覆使用 Reply API，不計入每月推播則數。
+ */
+function handleLineWebhook_(events) {
+  const token = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_TOKEN');
+  events.forEach(ev => {
+    if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+    if (ev.message.text.trim() !== '綁定') return;
+    const src = ev.source || {};
+    const id = src.groupId || src.roomId || src.userId;
+    const kind = src.groupId ? '群組' : src.roomId ? '聊天室' : '個人';
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName('LINE綁定') || ss.insertSheet('LINE綁定');
+    if (sh.getLastRow() === 0) sh.appendRow(['時間', '類型', 'ID']);
+    sh.appendRow([new Date(), kind, id]);
+
+    if (token && ev.replyToken) {
+      UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { Authorization: 'Bearer ' + token },
+        payload: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text',
+          text: `此${kind}的 ID：\n${id}\n\n請將這串 ID 填入 Apps Script 指令碼屬性 LINE_TO，多個以逗號分隔。` }] }),
+        muteHttpExceptions: true
+      });
+    }
+  });
+  return json_({ ok: true });
+}
+
+/* 測試 LINE 推播：設定好 LINE_CHANNEL_TOKEN 與 LINE_TO 後手動執行 */
+function testLine() {
+  const p = PropertiesService.getScriptProperties().getProperties();
+  if (!p.LINE_CHANNEL_TOKEN || !p.LINE_TO) throw new Error('請先設定 LINE_CHANNEL_TOKEN 與 LINE_TO');
+  p.LINE_TO.split(',').map(s => s.trim()).filter(Boolean).forEach(to => {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + p.LINE_CHANNEL_TOKEN },
+      payload: JSON.stringify({ to: to, messages: [{ type: 'text', text: '花蓮水訂單通知測試：LINE 推播設定成功' }] }),
+      muteHttpExceptions: true
+    });
+    console.log(to, res.getResponseCode(), res.getContentText());
+  });
 }
 
 /* ============================== 工具 ============================== */
